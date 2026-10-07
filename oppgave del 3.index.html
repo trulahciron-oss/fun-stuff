@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+  <style>
+    canvas { background-color: rgb(128, 128, 128); }
+  </style>
+  <body>
+    <canvas id="game" width="800" height="800"></canvas>
+    <script>
+      const c = document.getElementById("game");
+      const ctx = c.getContext("2d");
+
+      const bgImage = new Image();
+      bgImage.src = 'background.jpg';
+
+      let backgroundX = 1;
+
+      
+      // Box settings
+      const size = 50;
+      const wallleft = 50;
+      const wallright = 750;
+      const walltop = 50;
+      const wallbottom = 750;
+
+  
+      //blue
+      let x = 380;
+      let y = 400;
+      let speedx = 0;
+      let speedy = 0;
+
+      x = x + speedx;
+      y = y + speedy;
+
+
+      //red
+      let x2 = 300;
+      let y2 = 100;
+      let speedx2 = 1;
+      let speedy2 = 2;  
+
+      x2 = x2 + speedx2;
+      y2 = y2 + speedy2;
+
+
+      //yellow
+      let x3 = 200;
+      let y3 = 400;
+      let speedx3 = -2;
+      let speedy3 = 1;
+
+      x3 = x3 + speedx3;
+      y3 = y3 + speedy3;
+
+      function loop() {
+
+
+        // blå bounce topp
+            if (x + size >= wallright || x <= wallleft) {
+                speedx = -speedx; // Reverse direction
+            }
+            // blå bounce nede
+            if (y + size >= wallbottom || y <= walltop) {
+                speedy = -speedy;
+            }
+
+
+        // rød bounce høyre
+             if (x2 + size >= wallright || x2 <= wallleft) {
+             speedx2 = -speedx2; 
+            }
+        // rød bounce nede
+             if (y2 + size >= wallbottom || y2 <= walltop) {
+             speedy2 = -speedy2; 
+             }
+
+
+        //yellow bounce
+             if (x3 + size >= wallright || x3 <= wallleft) {
+             speedx3 = -speedx3;
+             }
+             if (y3 + size >= wallbottom || y3 <= walltop) {
+             speedy3 = -speedy3;
+             }
+
+        update();
+
+        draw();
+
+        requestAnimationFrame(loop);
+      }
+
+       loop();
+      
+
+      function update() {
+      
+
+            x = x + -speedx;
+            y = y + -speedy;
+
+            x2 = x2 + speedx2;
+            y2 = y2 + speedy2;
+
+            
+
+             y3 = y3 + speedy3;
+             x3 = x3 + speedx3;
+
+             // ADD THIS LINE to make the background variable change:
+             backgroundX += 1;
+
+             
+            
+
+
+
+            
+      }
+
+      function draw() {
+        drawBackground();
+        ctx.fillStyle = 'blue';
+        ctx.fillRect(x, y, 50, 50);
+
+        //ctx.fillStyle = "red";
+        //ctx.fillRect(x2, y2, 50, 50);
+
+        //ctx.fillStyle = 'yellow';
+        //ctx.fillRect(x3, y3, 50, 50);
+
+        
+      }
+      
+
+
+      function drawBackground() {
+        ctx.save(); // save the canvas state
+
+        // 1. Create a "cookie cutter" box so the image doesn't spill into the grey borders
+        ctx.beginPath();
+        ctx.rect(50, 50, 700, 700);
+        ctx.clip();
+
+        // 2. Calculate the scrolling offset (loops perfectly every 700 pixels)
+        let offset = backgroundX % 700;
+
+        // 3. Draw the first image
+        // ctx.drawImage(image, x, y, width, height)
+        ctx.drawImage(bgImage, 50 - offset, 50, 700, 700);
+
+        // 4. Draw the second copy right next to it to fill the gap
+        ctx.drawImage(bgImage, 50 - offset + 700, 50, 700, 700);
+
+        ctx.restore(); // Restore canvas state so your boxes can draw normally
+}
+
+      
+
+
+
+    </script>
+    
+  </body>
+</html>

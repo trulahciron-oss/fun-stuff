@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arcade Blitz Fighter Engine</title>
+    <style>
+        body {
+            background: #11141a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+        }
+        canvas {
+            border: 4px solid #dbaf37;
+            background: linear-gradient(to bottom, #1a1c2e 0%, #2b1f3d 100%);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="blitzCanvas" width="700" height="400"></canvas>
+
+<script>
+const canvas = document.getElementById("blitzCanvas");
+const ctx = canvas.getContext("2d");
+
+// --- Advanced Physics Configuration ---
+const PHYSICS = {
+    gravity: 0.55,
+    friction: 0.82,
+    groundY: 340
+};
+
+// --- Fighter Class Blueprint ---
+class Fighter {
+    constructor(x, side, color, id) {
+        this.id = id;
+        this.x = x;
+        this.y = PHYSICS.groundY - 110;
+        this.width = 50;
+        this.height = 110;
+        this.vx = 0;
+        this.vy = 0;
+        this.side = side; // 1 = facing right, -1 = facing left
+        this.color = color;
+        
+        // Stats
+        this.hp = 100;
+        this.maxHp = 100;
+        this.comboCount = 0;
+        this.comboTimer = 0;
+
+        // Finite State Machine
+        this.state = "IDLE"; // IDLE, RUNNING, JUMPING, ATTACKING, HITSTUN, DEAD
+        this.stateTimer = 0;
+
+        // Frame Data & Attacks
+        this.activeAttack = null;
+        this.attackHasHit = false;
+
+        this.moveSpeed = 6;
+        this.jumpForce = 14;
+    }
+
+    getHurtbox() {
+        return { x: this.x, y: this.y, width: this.width, height: this.height };
+    }
+
+    getHitbox() {
+        if (this.state !== "ATTACKING" || !this.activeAttack || this.stateTimer < this.activeAttack.startFrame) return null;
+        
+        const attack = this.activeAttack;
+        let hitboxX = this.side === 1 ? this.x + this.width : this.x - attack.range;
+        return {
+            x: hitboxX,
+            y: this.y + attack.offsetY,
+            width: attack.range,
+            height: attack.height
+        };
+    }
+
+    applyDamage(amount, knockbackX, knockbackY) {
+        if (this.state === "DEAD") return;
+        
+        this.hp = Math.max(0, this.hp - amount);
+        this.state = "HITSTUN";
+        this.stateTimer = 0;
+        this.activeAttack = null;
+
+        // Apply dynamic impact velocities (Juggle Rule)
+        this.vx = knockbackX;
+        this.vy = knockbackY;
+
+        if (this.hp <= 0) {
+            this.state = "DEAD";
+        }
+    }
+
+    executeAttack(attackData) {
+        if (["ATTACKING", "HITSTUN", "DEAD"].includes(this.state)) return;
+        this.state = "ATTACKING";
+        this.stateTimer = 0;
+        this.activeAttack = attackData;
+        this.attackHasHit = false;
+        this.vx = attackData.lunge * this.side; // Small step forward during attack
+    }
+
+    update(inputs, enemy) {
+        this.stateTimer++;
+        if (this.comboTimer > 0) {
+            this.comboTimer--;
+            if (this.comboTimer === 0) this.comboCount = 0;
+        }
+
+        // Auto-face toward the opponent unless locking down an attack movement
+        if (this.state !== "ATTACKING" && this.state !== "HITSTUN" && this.state !== "DEAD") {
+            this.side = (this.x + this.width / 2 < enemy.x + enemy.width / 2) ? 1 : -1;
+        }
+
+        // State Loop Logic
+        switch (this.state) {
+            case "DEAD":
+                this.vx *= PHYSICS.friction;
+                break;
+
+            case "HITSTUN":
+                // Gradual decay of kinetic energy
+                this.vx *= 0.95; 
+                // Recovery frame threshold met
+                if (this.y >= PHYSICS.groundY - this.height && this.stateTimer > 25) {
+                    this.state = "IDLE";
+                }
+                break;
+
+            case "ATTACKING":
+                this.vx *= 0.9; // Decelerate lunge momentum
+                if (this.stateTimer >= this.activeAttack.totalDuration) {
+                    this.state = "IDLE";
+                    this.activeAttack = null;
+                }
+                break;
+
+            case "IDLE":
+case "RUNNING":
+case "JUMPING":
+                // Standard Neutral Controls Mapping
+                if (inputs.left) {
+                    this.vx = -this.moveSpeed;
+                    if (this.y >= PHYSICS.groundY - this.height) this.state = "RUNNING";
+                } else if (inputs.right) {
+                    this.vx = this.moveSpeed;
+                    if (this.y >= PHYSICS.groundY - this.height) this.state = "RUNNING";
+                } else {
+                    this.vx *= PHYSICS.friction;
+                    if (this.y >= PHYSICS.groundY - this.height) this.state = "IDLE";
+                }
+
+                if (inputs.jump && this.y >= PHYSICS.groundY - this.height) {
+                    this.vy = -this.jumpForce;
+                    this.state = "JUMPING";
+                }
+
+                // Attack key mapping hooks
+                if (inputs.light) {
+                    this.executeAttack({ 
+                        name: "Jab", damage: 4, startFrame: 4, totalDuration: 15, 
+                        range: 45, height: 20, offsetY: 25, lunge: 2,
+                        kX: 3, kY: -2 
+                    });
+                } else if (inputs.heavy) {
+                    this.executeAttack({ 
+                        name: "Launcher Heavy", damage: 12, startFrame: 8, totalDuration: 30, 
+                        range: 55, height: 40, offsetY: 10, lunge: 4,
+                        kX: 2, kY: -13 // 🌟 High vertical knockback for Battle Blitz aerial juggling!
+                    });
+                }
+                break;
+        }
+
+        // Apply core world environmental physics forces
+        this.vy += PHYSICS.gravity;
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Ground clamping parameters
+        if (this.y > PHYSICS.groundY - this.height) {
+            this.y = PHYSICS.groundY - this.height;
+            this.vy = 0;
+            if (this.state === "JUMPING") this.state = "IDLE";
+        }
+
+        // Screen boundary safety constraints
+        this.x = Math.max(0, Math.min(canvas.width - this.width, this.x));
+    }
+
+    draw() {
+        ctx.save();
+        
+        // Color shifts to represent damage indicators or states cleanly
+        if (this.state === "HITSTUN") ctx.fillStyle = "#ffffff";
+        else if (this.state === "DEAD") ctx.fillStyle = "#4a4d53";
+        else ctx.fillStyle = this.color;
+
+        // Render basic player body geometry
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+
+        // Visual Orientation indicator mapping (Eyes / Visor facing dynamic position)
+        ctx.fillStyle = "#000";
+        let eyeOffset = this.side === 1 ? this.width - 15 : 5;
+        ctx.fillRect(this.x + eyeOffset, this.y + 15, 10, 10);
+
+        // Debug Render Elements: Hitbox data projection layers
+        const hitbox = this.getHitbox();
+        if (hitbox) {
+            ctx.fillStyle = "rgba(255, 0, 0, 0.4)";
+            ctx.fillRect(hitbox.x, hitbox.y, hitbox.width, hitbox.height);
+        }
+
+        ctx.restore();
+    }
+}
+
+// --- Global Input Monitoring ---
+const inputStates = {
+    p1: { left: false, right: false, jump: false, light: false, heavy: false },
+    p2: { left: false, right: false, jump: false, light: false, heavy: false }
+};
+
+window.addEventListener("keydown", (e) => {
+    // Player 1 mapping (WASD + F / G keys)
+    if (e.key === 'a') inputStates.p1.left = true;
+    if (e.key === 'd') inputStates.p1.right = true;
+    if (e.key === 'w') inputStates.p1.jump = true;
+    if (e.key === 'f') inputStates.p1.light = true;
+    if (e.key === 'g') inputStates.p1.heavy = true;
+
+    // Player 2 mapping (Arrow Keys + Num 1 / Num 2 keys)
+    if (e.key === 'ArrowLeft')  inputStates.p2.left = true;
+    if (e.key === 'ArrowRight') inputStates.p2.right = true;
+    if (e.key === 'ArrowUp')    inputStates.p2.jump = true;
+    if (e.key === '1')          inputStates.p2.light = true;
+    if (e.key === '2')          inputStates.p2.heavy = true;
+});
+
+window.addEventListener("keyup", (e) => {
+    if (e.key === 'a') inputStates.p1.left = false;
+    if (e.key === 'd') inputStates.p1.right = false;
+    if (e.key === 'w') inputStates.p1.jump = false;
+    if (e.key === 'f') inputStates.p1.light = false;
+    if (e.key === 'g') inputStates.p1.heavy = false;
+
+    if (e.key === 'ArrowLeft')  inputStates.p2.left = false;
+    if (e.key === 'ArrowRight') inputStates.p2.right = false;
+    if (e.key === 'ArrowUp')    inputStates.p2.jump = false;
+    if (e.key === '1')          inputStates.p2.light = false;
+    if (e.key === '2')          inputStates.p2.false = false;
+});
+
+// --- Initialize Entities ---
+const player1 = new Fighter(120, 1, "#4d79ff", 1);  // Blue Robin archetype
+const player2 = new Fighter(530, -1, "#ffcc00", 2); // Yellow Cyborg archetype
+
+function processHitboxCollision(attacker, defender) {
+    const hitbox = attacker.getHitbox();
+    const hurtbox = defender.getHurtbox();
+
+    if (hitbox && !attacker.attackHasHit) {
+        if (hitbox.x < hurtbox.x + hurtbox.width &&
+            hitbox.x + hitbox.width > hurtbox.x &&
+            hitbox.y < hurtbox.y + hurtbox.height &&
+            hitbox.y + hitbox.height > hurtbox.y) {
+            
+            // Register Hit Event
+            attacker.attackHasHit = true;
+            
+            // Calculate relative direction trajectory variables
+            let dir = attacker.side;
+            let knockX = attacker.activeAttack.kX * dir;
+            let knockY = attacker.activeAttack.kY;
+
+            // Apply Damage & Hitstun
+            defender.applyDamage(attacker.activeAttack.damage, knockX, knockY);
+            
+            // Increment Battle Blitz combo counters
+            attacker.comboCount++;
+            attacker.comboTimer = 90; // Frames before counter clears
+        }
+    }
+}
+
+// --- Frame Processing Cycle ---
+function engineLoop() {
+    // 1. Process mechanics frame cycles
+    player1.update(inputStates.p1, player2);
+    player2.update(inputStates.p2, player1);
+
+    // 2. Continuous real-time overlapping matrix analysis
+    processHitboxCollision(player1, player2);
+    processHitboxCollision(player2, player1);
+
+    // 3. Clear Screen Buffer
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 4. Draw Stage Floor
+    ctx.fillStyle = "#151622";
+    ctx.fillRect(0, PHYSICS.groundY, canvas.width, canvas.height - PHYSICS.groundY);
+    ctx.fillStyle = "#dbaf37";
+    ctx.fillRect(0, PHYSICS.groundY, canvas.width, 4);
+
+    // 5. Draw Entities
+    player1.draw();
+    player2.draw();
+
+    // 6. Draw Arcade User Interface (Health bars, Combo notifications)
+    // P1 UI Bar
+    ctx.fillStyle = "#333"; ctx.fillRect(30, 25, 250, 20);
+    ctx.fillStyle = "#ff3333"; ctx.fillRect(30, 25, (player1.hp / player1.maxHp) * 250, 20);
+    
+    // P2 UI Bar
+    ctx.fillStyle = "#333"; ctx.fillRect(420, 25, 250, 20);
+    ctx.fillStyle = "#ff3333"; ctx.fillRect(420, 25, (player2.hp / player2.maxHp) * 250, 20);
+
+    // Render Combo HUD strings if active
+    ctx.fillStyle = "#fff"; ctx.font = "bold 14px 'Courier New'";
+    if (player1.comboCount > 1) ctx.fillText(`${player1.comboCount} HIT COMBO`, 30, 65);
+    if (player2.comboCount > 1) ctx.fillText(`${player2.comboCount} HIT COMBO`, 540, 65);
+
+    // Reset single input frame buffers for attack triggers
+    inputStates.p1.light = false;
+    inputStates.p1.heavy = false;
+    inputStates.p2.light = false;
+    inputStates.p2.heavy = false;
+
+    requestAnimationFrame(engineLoop);
+}
+
+// Execute Engine
+requestAnimationFrame(engineLoop);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,27 @@
+https://github.com/GetAcademy/2026.H1-Gratiskurs 
+
+6mdn løp, starter i 10 august. ta kontak tmed anita på mail. 
+så ett år men 4 dager praksis ute i bedrift, 1 dag undervisning. 
+(ingen lønn må ksaffe penger selv)
+
+
+MAL:
+
+<!doctype html>
+<html>
+  <style>
+    canvas { background-color: gray; }
+  </style>
+  <body>
+    <canvas id="game" width="800" height="800"></canvas>
+    <script>
+      const c = document.getElementById("game");
+      const ctx = c.getContext("2d");
+
+      ctx.fillStyle = "red";
+      ctx.fillRect(50, 50, 100, 60);   // firkant
+    </script>
+  </body>
+</html>  
+
+

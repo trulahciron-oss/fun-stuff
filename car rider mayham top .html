@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Top-Down Mini Racer Base</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: monospace;
+        }
+        canvas {
+            border: 4px solid #fff;
+            background-color: #141; /* Grass color */
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="480" height="360"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// --- Input System ---
+const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+window.addEventListener("keydown", (e) => { if (e.key in keys) keys[e.key] = true; });
+window.addEventListener("keyup", (e) => { if (e.key in keys) keys[e.key] = false; });
+
+// --- Track Definition (Waypoints for the AI & Visual Map) ---
+// We create a big loop path in world coordinates
+const trackWaypoints = [
+    { x: 200,  y: 200 },
+    { x: 1200, y: 200 },
+    { x: 1400, y: 400 },
+    { x: 1400, y: 1000 },
+    { x: 1100, y: 1300 },
+    { x: 400,  y: 1300 },
+    { x: 100,  y: 900 },
+    { x: 100,  y: 400 }
+];
+const trackWidth = 140;
+
+// --- Entities ---
+const player = {
+    x: 200,
+    y: 150,
+    speed: 0,
+    maxSpeed: 3,
+    angle: 0,         // Direction in Radians
+    steerSpeed: 0.02,
+    accel: 0.15,
+    decel: 0.05,
+    color: "#e91e63"  // Pink
+};
+
+const aiBot = {
+    x: 200,
+    y: 230,
+    speed: 2.5,       // Flat speed for simplicity
+    angle: 0,
+    currentWaypoint: 1,
+    color: "#4caf50"  // Green
+};
+
+// --- Helper Functions ---
+// Check if a vehicle is currently on the track gray zone
+function isOnTrack(x, y) {
+    // Loop through all segments and see if the point is close to the road line
+    for (let i = 0; i < trackWaypoints.length; i++) {
+        let p1 = trackWaypoints[i];
+        let p2 = trackWaypoints[(i + 1) % trackWaypoints.length];
+        
+        // Math to find the shortest distance from a point to a line segment
+        let A = x - p1.x;
+        let B = y - p1.y;
+        let C = p2.x - p1.x;
+        let D = p2.y - p1.y;
+        let dot = A * C + B * D;
+        let lenSq = C * C + D * D;
+        let param = lenSq !== 0 ? dot / lenSq : -1;
+        
+        let xx, yy;
+        if (param < 0) { xx = p1.x; yy = p1.y; }
+        else if (param > 1) { xx = p2.x; yy = p2.y; }
+        else { xx = p1.x + param * C; yy = p1.y + param * D; }
+        
+        let dist = Math.hypot(x - xx, y - yy);
+        if (dist < trackWidth / 2) return true; // Inside the road width bounds
+    }
+    return false;
+}
+
+// --- Main Game Loop ---
+function loop() {
+    // ------------------------------------
+    // 1. UPDATE PLAYER PHYSICS
+    // ------------------------------------
+    if (keys.ArrowLeft)  player.angle -= player.steerSpeed;
+    if (keys.ArrowRight) player.angle += player.steerSpeed;
+
+    if (keys.ArrowUp) {
+        player.speed = Math.min(player.speed + player.accel, player.maxSpeed);
+    } else if (keys.ArrowDown) {
+        player.speed = Math.max(player.speed - player.accel, -player.maxSpeed / 2); // Reverse
+    } else {
+        player.speed = player.speed > 0 ? Math.max(player.speed - player.decel, 0) : Math.min(player.speed + player.decel, 0);
+    }
+
+    // Grass Penalization Check
+    if (!isOnTrack(player.x, player.y)) {
+        if (player.speed > 2) player.speed = 2; // Throttle speed to a crawl on grass
+    }
+
+    // Move forward using Trigonometry
+    player.x += player.speed * Math.cos(player.angle);
+    player.y += player.speed * Math.sin(player.angle);
+
+    // ------------------------------------
+    // 2. UPDATE AI LOGIC (Waypoint Chasing)
+    // ------------------------------------
+    let target = trackWaypoints[aiBot.currentWaypoint];
+    let distanceToTarget = Math.hypot(target.x - aiBot.x, target.y - aiBot.y);
+
+    // If bot gets close to its current target waypoint, target the next one
+    if (distanceToTarget < 80) {
+        aiBot.currentWaypoint = (aiBot.currentWaypoint + 1) % trackWaypoints.length;
+    }
+
+    // Calculate angle towards target waypoint
+    let targetAngle = Math.atan2(target.y - aiBot.y, target.x - aiBot.x);
+    
+    // Genty rotate bot angle towards target angle
+    let angleDiff = targetAngle - aiBot.angle;
+    // Normalize angle difference between -PI and PI
+    angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+    aiBot.angle += angleDiff * 0.08;
+
+    // Move AI forward
+    aiBot.x += aiBot.speed * Math.cos(aiBot.angle);
+    aiBot.y += aiBot.speed * Math.sin(aiBot.angle);
+
+    // ------------------------------------
+    // 3. RENDERING (Camera Tracking)
+    // ------------------------------------
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    // Translate the canvas context so the player stays perfectly centered in view
+    // Camera X/Y offsets are calculated dynamically relative to player center
+    let cameraX = canvas.width / 2 - player.x;
+    let cameraY = canvas.height / 2 - player.y;
+    ctx.translate(cameraX, cameraY);
+
+    // Draw Track Road Circuits
+    ctx.strokeStyle = "#444"; // Gray Asphalt
+    ctx.lineWidth = trackWidth;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    trackWaypoints.forEach((wp, index) => {
+        if (index === 0) ctx.moveTo(wp.x, wp.y);
+        else ctx.lineTo(wp.x, wp.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+
+    // Draw White Center Lines
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 4;
+    ctx.setLineDash([20, 20]); // Dashed line effect
+    ctx.stroke();
+    ctx.setLineDash([]); // Reset dash for cars
+
+    // Draw AI Bot
+    ctx.save();
+    ctx.translate(aiBot.x, aiBot.y);
+    ctx.rotate(aiBot.angle);
+    ctx.fillStyle = aiBot.color;
+    ctx.fillRect(-15, -10, 30, 20); // Draw rectangular vehicle wrapper
+    ctx.fillStyle = "#000"; // Wheels
+    ctx.fillRect(-12, -13, 8, 3); ctx.fillRect(4, -13, 8, 3);
+    ctx.fillRect(-12, 10, 8, 3);  ctx.fillRect(4, 10, 8, 3);
+    ctx.restore();
+
+    // Draw Player Car
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.angle);
+    ctx.fillStyle = player.color;
+    ctx.fillRect(-15, -10, 30, 20);
+    ctx.fillStyle = "#000"; // Wheels
+    ctx.fillRect(-12, -13, 8, 3); ctx.fillRect(4, -13, 8, 3);
+    ctx.fillRect(-12, 10, 8, 3);  ctx.fillRect(4, 10, 8, 3);
+    ctx.fillStyle = "#fff"; // Windshield indicating front direction
+    ctx.fillRect(5, -7, 4, 14);
+    ctx.restore();
+
+    ctx.restore(); // Restore camera layout transformation
+
+    // Draw simple Speed HUD
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px monospace";
+    ctx.fillText(`SPEED: ${Math.abs(Math.floor(player.speed * 10))}`, 20, 30);
+
+    requestAnimationFrame(loop);
+}
+
+// Fire up loop
+requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+  <style>
+    canvas { background-color: rgb(0, 0, 0); }
+  </style>
+  <body>
+    <canvas id="game" width="800" height="800"></canvas>
+    <script>
+      const c = document.getElementById("game");
+      const ctx = c.getContext("2d");
+
+      ctx.fillStyle = "red";
+      ctx.fillRect(50, 50, 0, 0);   // firkant
+
+      function drawFace(x, y) {
+        //Hode
+        ctx.beginPath();
+        ctx.fillStyle = '#ffcc56';
+        ctx.arc(x, y, 70, 0, 2 * Math.PI * 2);
+        ctx.fill();
+
+        //venstre øye
+        ctx.beginPath();
+        ctx.fillStyle = 'white';
+        ctx.arc(x - 20, y - 10, 10, 0, 2 * Math.PI * 2);
+        ctx.fill();
+
+        //høyre øye
+        ctx.beginPath();
+        ctx.arc(x + 20, y - 10, 10, 0, 2 * Math.PI * 2);
+        ctx.fill();
+
+        // Munn
+        ctx.beginPath();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 4;
+        ctx.arc(x, y + 25, 20, 13, Math.PI);
+        ctx.stroke();
+
+        //nose
+        ctx.beginPath();
+        ctx.fillStyle = 'turquoise';
+        ctx.lineWidth = 5;
+        ctx.arc(x, 160, 7, 9, 2 * Math.PI *  3);
+        ctx.fill();
+
+      }
+
+      drawFace(150, 150);
+      drawFace(400, 150);
+
+
+
+      
+    </script>
+  </body>
+</html>

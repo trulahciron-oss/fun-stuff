@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RaceScape: Gielinor Grand Prix</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: monospace;
+            overflow: hidden;
+            color: #fff;
+        }
+        canvas {
+            border: 4px solid #b8860b; /* OSRS Gold Border */
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="480" height="360"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// --- Game Variables ---
+const player = {
+    x: 0,              // Position relative to track center (-1 to 1 is the road)
+    vx: 0,             // Horizontal velocity (momentum)
+    position: 0,       // Distance traveled along the track
+    speed: 0,
+    maxSpeed: 12,
+    accel: 0.12,
+    decel: 0.06,
+    steerSpeed: 0.04,  // Fixed raw steering power
+    
+    // OSRS Systems
+    inventory: null,
+    boostTimer: 0
+};
+
+const keys = { ArrowUp: false, ArrowLeft: false, ArrowRight: false, " ": false };
+window.addEventListener("keydown", (e) => { 
+    if (e.key in keys) keys[e.key] = true; 
+    if (e.key === " ") useItem();
+});
+window.addEventListener("keyup", (e) => { 
+    if (e.key in keys) keys[e.key] = false; 
+});
+
+// --- Sky Background Offset Tracking ---
+let skyOffset = 0;
+
+// --- Track & Item Placement ---
+const segments = [];
+const segmentLength = 200; 
+
+function addRoad(enter, hold, leave, curve) {
+    for (let i = 0; i < enter; i++) segments.push(curve * (i / enter));
+    for (let i = 0; i < hold; i++) segments.push(curve);
+    for (let i = 0; i < leave; i++) segments.push(curve * (1 - (i / leave)));
+}
+
+// Map layout with nice visible curves
+addRoad(50, 50, 50, 0);     // Straight line at start
+addRoad(60, 100, 60, 2);    // Sharp right turn
+addRoad(50, 50, 50, 0);     // Straight
+addRoad(60, 100, 60, -2);   // Sharp left turn
+addRoad(50, 50, 50, 0);     // Straight back
+
+const trackLength = segments.length * segmentLength;
+const lootBox = { position: 800, x: 0, active: true, respawnTimer: 0 };
+
+// --- Dynamic Scenery Generator ---
+const sprites = [];
+function generateScenery() {
+    for (let pos = 200; pos < trackLength; pos += 250) {
+        if (Math.abs(pos - lootBox.position) < 150) continue;
+        let sideX = Math.random() < 0.5 ? -1.7 : 1.7; 
+        let objectType = Math.random() < 0.5 ? 'tree' : 'rock';
+        sprites.push({ position: pos, x: sideX, type: objectType });
+    }
+}
+generateScenery();
+
+const particles = [];
+
+function getSegment(position) {
+    const index = Math.floor(position / segmentLength) % segments.length;
+    return segments[index];
+}
+
+function useItem() {
+    if (player.inventory === "Stamina Potion" && player.boostTimer === 0) {
+        player.boostTimer = 90; 
+        player.inventory = null;
+    }
+}
+
+function drawSceneryObject(ctx, x, y, size, type) {
+    if (type === 'rock') {
+        ctx.fillStyle = "#3a3d40"; 
+        ctx.beginPath();
+        ctx.moveTo(x - size, y);
+        ctx.lineTo(x - size*0.6, y - size*0.9);
+        ctx.lineTo(x + size*0.6, y - size*0.9);
+        ctx.lineTo(x + size, y);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "#00ffff"; 
+        ctx.fillRect(x - size*0.3, y - size*0.6, size*0.2, size*0.2);
+    } else if (type === 'tree') {
+        ctx.fillStyle = "#3d2a1d"; 
+        ctx.fillRect(x - size*0.15, y - size, size*0.3, size);
+        ctx.fillRect(x - size*0.6, y - size*0.8, size*0.5, size*0.15);
+        ctx.fillRect(x + size*0.1, y - size*0.6, size*0.5, size*0.15);
+    }
+}
+
+// --- Main Game Loop ---
+function updateAndRender() {
+    // 1. DYNAMIC GRASS CHECK: True boundary alignment
+    let isOnGrass = (player.x < -1.0 || player.x > 1.0);
+
+    // 2. Speed Control & Boost Mechanics
+    let currentMaxSpeed = player.maxSpeed;
+    if (player.boostTimer > 0) {
+        currentMaxSpeed = 20; 
+        player.speed = Math.min(player.speed + 0.5, currentMaxSpeed);
+        player.boostTimer--;
+
+        if (Math.random() < 0.5) {
+            particles.push({
+                screenX: canvas.width / 2 + (Math.random() - 0.5) * 30,
+                screenY: canvas.height - 35,
+                radius: Math.random() * 5 + 2,
+                alpha: 1
+            });
+        }
+    } else {
+        if (keys.ArrowUp) {
+            player.speed = Math.min(player.speed + player.accel, currentMaxSpeed);
+        } else {
+            player.speed = Math.max(player.speed - player.decel, 0);
+        }
+    }
+
+    // Grass speed penalty
+    if (isOnGrass && player.speed > 3) {
+        player.speed -= 0.2;
+    }
+
+    player.position += player.speed;
+
+   // 3. BALANCED PHYSICS ENGINE (🌟 VELOCITY SMOOTHNESS RESTORED)
+    const currentCurve = getSegment(player.position);
+    
+    // Give player slightly better handling control if on the grass, otherwise scale by speed
+    let steeringFactor = isOnGrass ? 1.2 : Math.min(player.speed / 4, 1.0);
+
+    // Centrifugal force: Track pulls you outward on turns gradually
+    player.vx -= currentCurve * 0.003 * (player.speed / player.maxSpeed);
+
+    // Progressive Steering: Keyboard arrows add to your velocity instead of teleporting you
+    // We dropped steerSpeed down from 0.04 to a smooth progressive 0.006 rate
+    if (keys.ArrowLeft)  player.vx -= 0.006 * steeringFactor;
+    if (keys.ArrowRight) player.vx += 0.006 * steeringFactor;
+
+    // Weight Damping: This is the magic rubber-tire grip factor. 
+    // It creates the smooth "drift decay" when you release the arrow keys.
+    player.vx *= 0.85; 
+
+    // Apply horizontal velocity smoothly
+    player.x += player.vx;
+    
+    // Hard clamp boundaries so you never slide off screen permanently
+    player.x = Math.max(Math.min(player.x, 2.0), -2.0);
+
+    // Smooth Sky Parallax shift
+    skyOffset -= currentCurve * (player.speed * 0.05);
+    if (keys.ArrowLeft && player.speed > 0) skyOffset += 1.0;
+    if (keys.ArrowRight && player.speed > 0) skyOffset -= 1.0;
+
+    if (player.position > trackLength) player.position -= trackLength;
+
+    // Check Loot Box Collision
+    if (lootBox.active) {
+        let distanceToBox = Math.abs(player.position - lootBox.position);
+        if (distanceToBox < 40 && Math.abs(player.x - lootBox.x) < 0.6) {
+            lootBox.active = false;
+            lootBox.respawnTimer = 180; 
+            player.inventory = "Stamina Potion";
+        }
+    } else {
+        lootBox.respawnTimer--;
+        if (lootBox.respawnTimer <= 0) lootBox.active = true;
+    }
+
+    // 4. Render Sky and Grass backgrounds
+    ctx.fillStyle = "#11161B"; 
+    ctx.fillRect(0, 0, canvas.width, canvas.height / 2);
+
+    ctx.fillStyle = "#0B0E12"; 
+    ctx.save();
+    ctx.translate(skyOffset % canvas.width, 0);
+    for (let bgLoop = -2; bgLoop < 3; bgLoop++) {
+        let startX = bgLoop * canvas.width;
+        ctx.fillRect(startX + 40,  120, 30, 60);
+        ctx.fillRect(startX + 35,  110, 40, 10);
+        ctx.fillRect(startX + 180, 130, 50, 50);
+        ctx.fillRect(startX + 320, 100, 25, 80);
+    }
+    ctx.restore();
+
+    ctx.fillStyle = "#1c3311"; 
+    ctx.fillRect(0, canvas.height / 2, canvas.width, canvas.height / 2);
+
+    // 5. Render 3D Track Projection Lines
+    const cameraHeight = 1000;
+    const horizon = canvas.height / 2; 
+    let dx = 0; 
+    let curCurve = 0;
+    let roadLines = [];
+
+    for (let i = 0; i < horizon; i++) {
+        const screenY = horizon + i; 
+        const worldDistance = cameraHeight / (i + 1);
+        const worldPos = player.position + worldDistance;
+        
+        const segmentCurve = getSegment(worldPos);
+        curCurve += segmentCurve;
+        dx += curCurve * 0.15; 
+
+        const roadWidth = 36000 / worldDistance; 
+        
+        // 🌟 THE ULTIMATE FIX: Separated visual projection dx from the physical player position lane mapping
+        const roadCenter = canvas.width / 2 + dx - (player.x * roadWidth);
+
+        roadLines[screenY] = { center: roadCenter, width: roadWidth, worldPos: worldPos };
+
+        const isRumble = Math.floor(worldPos / 40) % 2 === 0;
+        ctx.fillStyle = isRumble ? "#262626" : "#2e2e2e"; 
+        ctx.fillRect(roadCenter - roadWidth / 2, screenY, roadWidth, 1);
+
+        ctx.fillStyle = isRumble ? "#4a2d18" : "#362010"; 
+        ctx.fillRect(roadCenter - roadWidth / 2 - roadWidth * 0.1, screenY, roadWidth * 0.1, 1);
+        ctx.fillRect(roadCenter + roadWidth / 2, screenY, roadWidth * 0.1, 1);
+    }
+
+    // 6. Render Floating Loot Box
+    if (lootBox.active) {
+        let boxRelPos = lootBox.position - player.position;
+        if (boxRelPos < -trackLength / 2) boxRelPos += trackLength;
+        if (boxRelPos > trackLength / 2) boxRelPos -= trackLength;
+
+        if (boxRelPos > 0 && boxRelPos < 2000) {
+            const i = Math.floor(cameraHeight / boxRelPos);
+            const screenY = horizon + i;
+            if (screenY >= horizon && screenY < canvas.height) {
+                const line = roadLines[screenY];
+                const boxScale = line.width / 200;
+                const boxX = line.center + ((lootBox.x - player.x) * line.width / 2); 
+                const size = 20 * boxScale;
+                ctx.fillStyle = "#00bcd4";
+                ctx.fillRect(boxX - size/2, screenY - size, size, size);
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 1 * boxScale;
+                ctx.strokeRect(boxX - size/2, screenY - size, size, size);
+            }
+        }
+    }
+
+    // 7. Render Roadside Scenery (Rocks and Trees)
+    sprites.forEach(sprite => {
+        let relPos = sprite.position - player.position;
+        if (relPos < -trackLength / 2) relPos += trackLength;
+        if (relPos > trackLength / 2) relPos -= trackLength;
+
+        if (relPos > 0 && relPos < 2000) {
+            const i = Math.floor(cameraHeight / relPos);
+            const screenY = horizon + i;
+            
+            if (screenY >= horizon && screenY < canvas.height) {
+                const line = roadLines[screenY];
+                const spriteScale = line.width / 200;
+                const spriteX = line.center + ((sprite.x - player.x) * line.width / 2);
+                const objectSize = 35 * spriteScale;
+
+                drawSceneryObject(ctx, spriteX, screenY, objectSize, sprite.type);
+            }
+        }
+    });
+
+    // Update boost exhaust trail particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        ctx.fillStyle = `rgba(76, 175, 80, ${p.alpha})`;
+        ctx.beginPath(); ctx.arc(p.screenX, p.screenY, p.radius, 0, Math.PI * 2); ctx.fill();
+        p.screenY -= 1.5; p.alpha -= 0.03;
+        if (p.alpha <= 0) particles.splice(i, 1);
+    }
+
+    // 8. Draw Player Sled / Coal Cart
+    const kartX = canvas.width / 2;
+    const kartY = canvas.height - 45; 
+
+    let spriteFrame = "straight";
+    if (keys.ArrowLeft)  spriteFrame = "left";
+    if (keys.ArrowRight) spriteFrame = "right";
+
+    if (spriteFrame === "straight") {
+        ctx.fillStyle = "#5c4033"; ctx.fillRect(kartX - 25, kartY, 50, 22); 
+        ctx.fillStyle = "#222"; ctx.fillRect(kartX - 20, kartY - 6, 40, 6); 
+        ctx.fillStyle = "#3a3a3a"; ctx.fillRect(kartX - 31, kartY + 4, 6, 14); ctx.fillRect(kartX + 25, kartY + 4, 6, 14);
+        ctx.fillStyle = "#708090"; ctx.beginPath(); ctx.arc(kartX, kartY - 4, 10, 0, Math.PI * 2); ctx.fill(); 
+        ctx.fillStyle = "#000"; ctx.fillRect(kartX - 6, kartY - 7, 12, 3); 
+    } else if (spriteFrame === "left") {
+        ctx.fillStyle = "#4a3329"; ctx.fillRect(kartX - 19, kartY, 38, 22);
+        ctx.fillStyle = "#5c4033"; ctx.fillRect(kartX - 28, kartY, 11, 22);
+        ctx.fillStyle = "#222"; ctx.fillRect(kartX - 22, kartY - 6, 36, 6);
+        ctx.fillStyle = "#3a3a3a"; ctx.fillRect(kartX - 31, kartY + 5, 3, 11); ctx.fillRect(kartX + 19, kartY + 3, 8, 16);  
+        ctx.fillStyle = "#708090"; ctx.beginPath(); ctx.arc(kartX - 4, kartY - 4, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#000"; ctx.fillRect(kartX - 11, kartY - 7, 10, 3);
+    } else if (spriteFrame === "right") {
+        ctx.fillStyle = "#5c4033"; ctx.fillRect(kartX + 17, kartY, 11, 22);
+        ctx.fillStyle = "#4a3329"; ctx.fillRect(kartX - 19, kartY, 36, 22);
+        ctx.fillStyle = "#222"; ctx.fillRect(kartX - 14, kartY - 6, 36, 6);
+        ctx.fillStyle = "#3a3a3a"; ctx.fillRect(kartX - 27, kartY + 3, 8, 16); ctx.fillRect(kartX + 28, kartY + 5, 3, 11); 
+        ctx.fillStyle = "#708090"; ctx.beginPath(); ctx.arc(kartX + 4, kartY - 4, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#000"; ctx.fillRect(kartX + 1, kartY - 7, 10, 3);
+    }
+
+    // 9. HUD Overlay Engine
+    ctx.fillStyle = "rgba(40, 35, 30, 0.85)"; ctx.fillRect(canvas.width - 130, 15, 115, 60);
+    ctx.strokeStyle = "#5c4033"; ctx.lineWidth = 3; ctx.strokeRect(canvas.width - 130, 15, 115, 60);
+    ctx.strokeStyle = "#b8860b"; ctx.lineWidth = 1; ctx.strokeRect(canvas.width - 127, 18, 109, 54);
+    ctx.fillStyle = "#dbaf37"; ctx.font = "10px monospace"; ctx.fillText("INVENTORY", canvas.width - 103, 32);
+    ctx.fillStyle = player.inventory ? "#4caf50" : "#8a8a8a"; ctx.font = "bold 9px monospace"; ctx.fillText(player.inventory ? player.inventory : "[Empty Slot]", canvas.width - 118, 52);
+
+    ctx.fillStyle = "#fff"; ctx.font = "14px monospace";
+    ctx.fillText(`SPEED: ${Math.floor(player.speed * 8)} MPH`, 20, 35);
+    
+    if (isOnGrass) {
+        ctx.fillStyle = "#ff4444";
+        ctx.fillText("ON GRASS - SLOWED DOWN!", 20, 58);
+    } else if (player.inventory) {
+        ctx.fillStyle = "#dbaf37";
+        ctx.fillText("Press SPACEBAR to activate boost!", 20, 58);
+    }
+
+    requestAnimationFrame(updateAndRender);
+}
+
+requestAnimationFrame(updateAndRender);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+  <style>
+    canvas { background-color: rgb(255, 255, 255); }
+  </style>
+  <body>
+    <canvas id="game" width="800" height="800"></canvas>
+    <script>
+      const c = document.getElementById("game");
+      const ctx = c.getContext("2d");
+
+
+      ctx.fillStyle = 'red';
+      ctx.fillRect(330, 340, 120, 80);
+
+      ctx.fillStyle = 'red';
+      ctx.fillRect(550, 200, 120, 40);
+
+      ctx.fillStyle = 'red';
+      ctx.fillRect(100, 200, 120, 40);
+
+      ctx.fillStyle = 'yellow';
+      ctx.beginPath();
+      ctx.arc(350, 720, 160, 9.5, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = 'purple';
+      ctx.beginPath();
+      ctx.fillRect(390, 678, 20, 40);
+      ctx.fill();
+
+      function drawface(x, y) {
+        ctx.fillStyle = 'green';
+        ctx.beginPath();
+        ctx.arc(x - 30, y - 10, 8, 0, Math.PI * 2);
+        ctx.arc(x + 30, y - 10, 8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      drawface(200, 200);
+      drawface(580, 200);
+      drawface(400, 400);
+
+    ctx.beginPath();
+    ctx.arc(470, 420, 30, 10, Math.PI);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.bezierCurveTo(800, 230, 500, 800, 400, 420);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.bezierCurveTo(-300, 200, 400, 800, 400, 420);
+    ctx.stroke();
+
+    ctx.font = '20px Arial';
+    ctx.fillText('free world', 100, 130);
+
+   
+
+
+
+
+
+    </script>
+  </body>
+</html>

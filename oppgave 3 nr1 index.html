@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+canvas { border:1px solid rgb(63, 50, 50) }
+</style>
+</head>
+<body>
+
+<canvas id="canvas" width="800" height="600"></canvas>
+
+<script>
+const c = document.getElementById("canvas")
+const ctx = c.getContext("2d")
+
+let x = 200
+let y = 100
+let vy = -0
+let gravity = 0.3 
+
+let pipeX = 800;
+let pipeX2 = 1200;
+
+let score = 0;
+let isPaused = false; //start spillet i gang
+
+
+
+
+function gameLoop(){
+
+    ctx.clearRect(0,0,c.width,c.height)
+
+    if (isPaused) {
+
+        ctx.fillStyle = 'black';
+        ctx.font = "40px Arial";
+        ctx.fillText("GAME PAUSED", c.width / 2 - 130, c.height / 2);
+
+    
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+
+    //physics
+    vy += gravity
+    y += vy
+
+    //floor collision
+    if (y +40 > c.height){
+        y = c.height - 40
+        vy = -vy * 0.10;  // endre vei,og miste engergi og %
+    }
+
+   
+
+    // move pipes: Subtract from pipeX to make them slide left
+    pipeX -= 3;
+    pipeX2 -= 3;
+
+    // If the pipe goes completely off the left edge, reset it to the right
+    if (pipeX < -80){
+        pipeX = 800
+        score += 1;
+    }
+    if (pipeX2 < -80){
+        pipeX2 = 800
+        score += 1;
+    }
+    //box
+    ctx.fillStyle = 'green';
+    ctx.fillRect(x, y, 40, 40)
+
+
+    
+// FIX 1: Changed '600' to 'pipeX' so they actually use the moving variable!
+    //pipes
+ctx.fillStyle = 'darkblue';
+ctx.fillRect (pipeX, 0, 50, 250)//upper pipe
+ctx.fillRect (pipeX , 400, 50, 500) // lower pipe
+
+ctx.fillstyle = 'color';
+ctx.fillRect(pipeX2, 0, 50, 250)//upper pipe
+ctx.fillRect(pipeX2, 500, 50, 500) // lower pipe   
+
+//scoreboard
+ctx.fillstyle = 'black';
+ctx.font = '30px Arial';
+ctx.fillText('Score: ' + score, 200, 40)
+
+    // Check collision for Pipe 1 (pipeX, upper height is 250, lower top is 400)
+    if (checkCollision(pipeX, 250, 400)) {
+        alert("Game Over! Your score: " + score);
+        document.location.reload(); // This restarts the game automatically
+        return; // Stops the loop entirely
+    }
+
+    // Check collision for Pipe 2 (pipeX2, upper height is 250, lower top is 500)
+    if (checkCollision(pipeX2, 250, 500)) {
+        alert("Game Over! Your score: " + score);
+        document.location.reload(); 
+        return; 
+    }
+
+
+
+    requestAnimationFrame(gameLoop)
+}
+
+// FIX 2: Moved the event listener OUTSIDE of the loop so it only registers once!
+    document.addEventListener("keydown", handleKeyDown)
+
+function handleKeyDown(e){
+    if(e.code === 'KeyP'){
+        isPaused = !isPaused;
+        return;
+    }
+
+    if(e.code === "Space") { 
+        if (isPaused === false){
+             vy = -13;
+        }
+    }
+}
+    
+ 
+function checkCollision(pipeXCoord, upperHeight, lowerTop) {
+    // 1. Check if the box is horizontally inside the pipe's width
+    let withinX = (x + 40 > pipeXCoord) && (x < pipeXCoord + 50);
+    
+    // 2. Check if the box hits the upper pipe vertically
+    let hitUpper = (y < upperHeight);
+    
+    // 3. Check if the box hits the lower pipe vertically
+    let hitLower = (y + 40 > lowerTop);
+    
+    // If we are inside the X boundaries AND hitting either top or bottom pipe, it's a collision!
+    if (withinX && (hitUpper || hitLower)) {
+        return true;
+    }
+    return false;
+}
+
+    //start game
+gameLoop()
+
+</script>
+</body>
+</html>

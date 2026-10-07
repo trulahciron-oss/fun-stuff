@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Pseudo-3D Kart Racer Base (Fully Fixed Perspective)</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            color: #fff;
+        }
+        canvas {
+            border: 4px solid #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+        }
+        #instructions {
+            position: absolute;
+            top: 10px;
+            text-align: center;
+            width: 100%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="instructions">UP: Accelerate | LEFT/RIGHT: Steer</div>
+<canvas id="gameCanvas" width="480" height="360"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// --- Game Settings & Variables ---
+const player = {
+    x: 0,          // Position relative to track center (-1 to 1)
+    position: 0,   // Distance along the track
+    speed: 0,
+    maxSpeed: 12,
+    accel: 0.1,
+    decel: 0.05,
+    steerSpeed: 0.04
+};
+
+const keys = { ArrowUp: false, ArrowLeft: false, ArrowRight: false };
+
+// --- Track Generation ---
+const segments = [];
+const segmentLength = 200; 
+
+function addRoad(enter, hold, leave, curve) {
+    for (let i = 0; i < enter; i++) segments.push(curve * (i / enter));
+    for (let i = 0; i < hold; i++) segments.push(curve);
+    for (let i = 0; i < leave; i++) segments.push(curve * (1 - (i / leave)));
+}
+
+// Build a loop track: Straight, Right turn, Straight, Sharp Left, Straight
+addRoad(100, 100, 100, 0);   // Straight starting line
+addRoad(100, 200, 100, 2);   // Gentle Right
+addRoad(100, 100, 100, 0);   // Straight
+addRoad(50, 150, 50, -4);    // Sharp Left
+addRoad(100, 200, 100, 1);   // Subtle Right
+addRoad(100, 100, 100, 0);   // Straight back to start
+
+const trackLength = segments.length * segmentLength;
+
+// --- Input Listeners ---
+window.addEventListener("keydown", (e) => { if (e.key in keys) keys[e.key] = true; });
+window.addEventListener("keyup", (e) => { if (e.key in keys) keys[e.key] = false; });
+
+function getSegment(position) {
+    const index = Math.floor(position / segmentLength) % segments.length;
+    return segments[index];
+}
+
+// --- Main Game Loop ---
+function updateAndRender() {
+    // 1. Physics & Movement
+    if (keys.ArrowUp) {
+        player.speed = Math.min(player.speed + player.accel, player.maxSpeed);
+    } else {
+        player.speed = Math.max(player.speed - player.decel, 0);
+    }
+
+    player.position += player.speed;
+
+    // Apply curve forces to the steering/player position
+    const currentCurve = getSegment(player.position);
+    
+    // Centrifugal force pushes player outward based on speed and curve severity
+    player.x -= (player.speed / player.maxSpeed) * currentCurve * 0.006;
+
+    if (keys.ArrowLeft) player.x -= player.steerSpeed * (player.speed / player.maxSpeed + 0.1);
+    if (keys.ArrowRight) player.x += player.steerSpeed * (player.speed / player.maxSpeed + 0.1);
+
+    // Keep player reasonably on the map boundaries
+    player.x = Math.max(Math.min(player.x, 2), -2);
+
+    // 2. Rendering Background (Sky on top, Grass on bottom half)
+    ctx.fillStyle = "#334"; // Sky (Top Half)
+    ctx.fillRect(0, 0, canvas.width, canvas.height / 2);
+    
+    ctx.fillStyle = "#141"; // Off-road Grass base (Bottom Half)
+    ctx.fillRect(0, canvas.height / 2, canvas.width, canvas.height / 2);
+
+    // 3. Rendering the Pseudo-3D Road 
+    const cameraHeight = 1000;
+    const horizon = canvas.height / 2; // Middle of screen
+    let dx = 0; 
+    let curCurve = 0;
+
+    // We draw from the horizon down to the bottom of the screen.
+    // 'i' represents the row offset relative to the horizon.
+    for (let i = 0; i < horizon; i++) {
+        // screenY starts at the horizon and moves DOWN to the bottom of the canvas
+        const screenY = horizon + i; 
+        
+        // As i increases (moving down the screen closer to player), worldDistance decreases
+        const worldDistance = cameraHeight / (i + 1);
+        const worldPos = player.position + worldDistance;
+        
+        // Grab track values at that exact distance
+        const segmentCurve = getSegment(worldPos);
+        curCurve += segmentCurve;
+        dx += curCurve * 0.05; 
+
+        // Calculate road width at this perspective row
+        const roadWidth = 40000 / worldDistance; 
+        
+        // Center of the road modified by camera curves and player's lateral position
+        const roadCenter = canvas.width / 2 + dx - (player.x * roadWidth);
+
+        // Striping details (rumble strips / alternating colors)
+        const isRumble = Math.floor(worldPos / 40) % 2 === 0;
+        const grassColor = isRumble ? "#161" : "#141";
+        const roadColor = isRumble ? "#444" : "#4a4a4a";
+        const rumbleColor = isRumble ? "#fff" : "#ff0000";
+
+        // Draw Grass edge adjustments
+        ctx.fillStyle = grassColor;
+        ctx.fillRect(0, screenY, canvas.width, 1);
+
+        // Draw main Road strip
+        ctx.fillStyle = roadColor;
+        ctx.fillRect(roadCenter - roadWidth / 2, screenY, roadWidth, 1);
+
+        // Draw Rumble Strips (Red & White edges)
+        const rumbleWidth = roadWidth * 0.1;
+        ctx.fillStyle = rumbleColor;
+        ctx.fillRect(roadCenter - roadWidth / 2 - rumbleWidth, screenY, rumbleWidth, 1);
+        ctx.fillRect(roadCenter + roadWidth / 2, screenY, rumbleWidth, 1);
+    }
+
+    // 4. Draw Simple Player Kart Sprite (Now firmly on the actual ground!)
+    const kartX = canvas.width / 2;
+    const kartY = canvas.height - 40;
+
+    ctx.fillStyle = "#e91e63"; // Bright Pink/Red Kart body
+    ctx.fillRect(kartX - 15, kartY, 30, 15);
+    
+    ctx.fillStyle = "#000"; // Wheels
+    ctx.fillRect(kartX - 20, kartY + 5, 6, 12);
+    ctx.fillRect(kartX + 14, kartY + 5, 6, 12);
+    
+    ctx.fillStyle = "#00bcd4"; // Helmet/Driver sitting on top of the kart
+    ctx.beginPath();
+    ctx.arc(kartX, kartY - 2, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 5. Draw UI
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px monospace";
+    ctx.fillText(`SPEED: ${Math.floor(player.speed * 10)} MPH`, 20, 40);
+    ctx.fillText(`DIST: ${Math.floor(player.position)}`, 20, 60);
+
+    requestAnimationFrame(updateAndRender);
+}
+
+// Kick off the loop
+requestAnimationFrame(updateAndRender);
+</script>
+
+</body>
+</html>
